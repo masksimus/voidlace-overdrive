@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VOIDLACE: OVERDRIVE</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; touch-action: none; font-family: 'Courier New', monospace; }
+        #ui {
+            position: absolute; top: 20px; left: 20px; color: #ff00ff;
+            font-size: 20px; text-shadow: 0 0 10px #ff00ff; pointer-events: none;
+        }
+        #controls {
+            position: absolute; bottom: 40px; width: 100%;
+            display: flex; justify-content: space-around; pointer-events: none;
+        }
+        .btn {
+            width: 70px; height: 70px; border: 3px solid #00ffff;
+            border-radius: 15px; background: rgba(0, 255, 255, 0.1);
+            pointer-events: auto; display: flex; align-items: center; justify-content: center;
+            color: #00ffff; font-weight: bold; box-shadow: 0 0 15px #00ffff;
+        }
+        .btn:active { transform: scale(0.9); background: rgba(0, 255, 255, 0.4); }
+    </style>
+</head>
+<body>
+    <div id="ui">VOIDLACE // OVRDRV<br>SCORE: 0000 | HP: 100%</div>
+    <div id="controls">
+        <div class="btn" id="moveBtn">BOOST</div>
+        <div class="btn" id="shootBtn">FIRE</div>
+    </div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        let score = 0, health = 100, isGameOver = false;
+        const enemies = [], bullets = [], particles = [];
+        let isMoving = false, frame = 0;
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // КИБЕР-СЕТКА (Эффект туннеля)
+        const gridGeo = new THREE.PlaneGeometry(100, 100, 20, 20);
+        const gridMat = new THREE.MeshBasicMaterial({ color: 0x220044, wireframe: true });
+        const grid = new THREE.Mesh(gridGeo, gridMat);
+        grid.rotation.x = -Math.PI / 2;
+        grid.position.y = -5;
+        scene.add(grid);
+
+        const gridTop = grid.clone();
+        gridTop.position.y = 15;
+        scene.add(gridTop);
+
+        // Игрок (Стильный кристалл)
+        const player = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.5),
+            new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true })
+        );
+        scene.add(player);
+
+        // Звуки (имитация через вибрацию на мобилках)
+        const vibrate = (ms) => { if(navigator.vibrate) navigator.vibrate(ms); };
+
+        function createExplosion(pos, color) {
+            for(let i=0; i<10; i++) {
+                const p = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial({ color }));
+                p.position.copy(pos);
+                p.userData.vel = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).multiplyScalar(0.2);
+                p.userData.life = 1.0;
+                particles.push(p);
+                scene.add(p);
+            }
+        }
+
+        // Управление
+        document.getElementById('moveBtn').ontouchstart = () => isMoving = true;
+        document.getElementById('moveBtn').ontouchend = () => isMoving = false;
+        document.getElementById('shootBtn').ontouchstart = shoot;
+        window.onkeydown = (e) => { if(e.code === 'Space') shoot(); if(e.code === 'KeyW') isMoving = true; };
+        window.onkeyup = (e) => { if(e.code === 'KeyW') isMoving = false; };
+
+        function shoot() {
+            const b = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1), new THREE.MeshBasicMaterial({ color: 0x00ffff }));
+            b.position.copy(player.position);
+            b.userData.vel = new THREE.Vector3(0, 0, -1.5);
+            bullets.push(b);
+            scene.add(b);
+        }
+
+        function animate() {
+            if(isGameOver) return;
+            requestAnimationFrame(animate);
+            frame++;
+
+            // Анимация сетки (движение вперед)
+            grid.position.z = (frame * 0.2) % 5;
+            gridTop.position.z = (frame * 0.2) % 5;
+
+            if(isMoving) player.position.z -= 0.2;
+            player.position.y = Math.sin(frame * 0.05) * 0.2; // Плавное покачивание
+            
+            camera.position.lerp(new THREE.Vector3(player.position.x, player.position.y + 2, player.position.z + 8), 0.1);
+            camera.lookAt(player.position.x, player.position.y, player.position.z - 5);
+
+            // Пули и частицы
+            bullets.forEach((b, i) => {
+                b.position.add(b.userData.vel);
+                if(b.position.z < player.position.z - 50) { scene.remove(b); bullets.splice(i,1); }
+            });
+
+            particles.forEach((p, i) => {
+                p.position.add(p.userData.vel);
+                p.userData.life -= 0.02;
+                p.material.opacity = p.userData.life;
+                if(p.userData.life <= 0) { scene.remove(p); particles.splice(i,1); }
+            });
+
+            // Враги (Кровавые кубы)
+            if(frame % 60 === 0) {
+                const en = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({ color: 0xff0055, wireframe: true }));
+                en.position.set(Math.random()*20-10, Math.random()*10, player.position.z - 50);
+                enemies.push(en);
+                scene.add(en);
+            }
+
+            enemies.forEach((en, i) => {
+                en.position.z += 0.2;
+                en.rotation.x += 0.02;
+                
+                // Коллизия с пулей
+                bullets.forEach((b, bi) => {
+                    if(en.position.distanceTo(b.position) < 1.5) {
+                        createExplosion(en.position, 0xff0055);
+                        scene.remove(en); enemies.splice(i,1);
+                        scene.remove(b); bullets.splice(bi,1);
+                        score += 100;
+                        updateUI();
+                    }
+                });
+
+                // Коллизия с игроком
+                if(en.position.distanceTo(player.position) < 1.2) {
+                    health -= 20;
+                    vibrate(100);
+                    camera.position.x += Math.random()-0.5; // Тряска
+                    scene.remove(en); enemies.splice(i,1);
+                    updateUI();
+                    if(health <= 0) { alert("SYSTEM FAILURE. SCORE: " + score); location.reload(); }
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        function updateUI() {
+            document.getElementById('ui').innerHTML = `VOIDLACE // OVRDRV<br>SCORE: ${score.toString().padStart(4, '0')} | HP: ${health}%`;
+        }
+
+        animate();
+    </script>
+</body>
+</html>
